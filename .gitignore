@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints
+
+# Data files (too large for GitHub)
+DIV2K/
+*.zip
+*.pkl
+*.h5
+*.hdf5
+
+# Model cache
+.cache/
+*.pth
+*.pt
+*.ckpt
+models/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Results
+div2k_bpp_sorted_selection.pkl
+*.pkl
+
+# Logs
+*.log
