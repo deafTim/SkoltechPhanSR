@@ -1,17 +1,22 @@
 # Bitrate-SR pipeline deps (pip).
-# Usage on Zhores (after: conda activate /home/timofey.glukhikh/.conda/science_phan):
 #
-#   # Prefer CUDA build matching the node driver (example: CUDA 12.4):
+# On Zhores (old system GCC): install binary wheels first, then the rest.
+#
+#   conda activate /home/timofey.glukhikh/.conda/science_phan
 #   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+#   pip install --only-binary=:all: "numpy<2.1" "pandas==2.2.3"
 #   pip install -r requirements.txt
 #
-# If torch/torchvision already installed with CUDA, skip the first line.
+# If torch/torchvision already installed with CUDA, skip the torch line.
+
+# Pins: avoid source builds on cluster nodes (gcc too old for pandas/meson)
+numpy>=1.24,<2.1
+pandas==2.2.3
 
 compressai
 torchsr
 transformers
 pillow
 matplotlib
-numpy
 tqdm
 scikit-image
