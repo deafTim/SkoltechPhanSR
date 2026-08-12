@@ -21,14 +21,14 @@ cd "$REPO_ROOT"
 mkdir -p logs
 
 module unload python/3.12 2>/dev/null || true
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/bitrate_sr_config.sh"
+
 if [[ -f /trinity/shared/opt/mambaforge3/etc/profile.d/conda.sh ]]; then
   # shellcheck disable=SC1091
   source /trinity/shared/opt/mambaforge3/etc/profile.d/conda.sh
-  conda activate science_phan 2>/dev/null || true
+  conda activate "${CONDA_ENV}"
 fi
-
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/bitrate_sr_config.sh"
 
 read -r -a LAMBDA_ARR <<< "$LAMBDAS"
 L="${LAMBDA_ARR[$SLURM_ARRAY_TASK_ID]}"
