@@ -1,0 +1,3 @@
+# One DIV2K HR filename per line (optional: filename,bpp).
+# Or run: bash select_bpp_images.sh → image_lists/bpp_diverse_10.txt
+0008.png
