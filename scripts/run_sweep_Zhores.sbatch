@@ -9,21 +9,23 @@
 #SBATCH --array=0-4
 #
 # Same training as run_sweep.sh, but on Zhores (Slurm array over LAMBDAS).
-# From repo root:
-#   mkdir -p logs && sbatch scripts/run_sweep_Zhores.sbatch
+# Submit from repo root (so SLURM_SUBMIT_DIR == repo root):
+#   sbatch scripts/run_sweep_Zhores.sbatch
 # Array size should match number of LAMBDAS in the config (default 5 → 0-4).
+#
+# Note: do NOT derive repo path from BASH_SOURCE — Slurm may copy this script
+# into a spool dir where mkdir/logs is not writable.
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$REPO_ROOT"
 mkdir -p logs
 
-module unload python/3.12 2>/dev/null || true
 # shellcheck disable=SC1091
-source "$SCRIPT_DIR/bitrate_sr_config.sh"
+source "$REPO_ROOT/scripts/bitrate_sr_config.sh"
 
+module unload python/3.12 2>/dev/null || true
 if [[ -f /trinity/shared/opt/mambaforge3/etc/profile.d/conda.sh ]]; then
   # shellcheck disable=SC1091
   source /trinity/shared/opt/mambaforge3/etc/profile.d/conda.sh
@@ -42,6 +44,7 @@ if [[ -z "${IMG_LIST}" || ! -f "$IMG_LIST" ]]; then
   exit 1
 fi
 
+echo "REPO_ROOT=$REPO_ROOT CONDA_ENV=$CONDA_ENV lambda=$L"
 python -m bitrate_sr.train \
   --project-root "$PROJECT_ROOT" \
   --data-dir "$DATA_DIR" \
