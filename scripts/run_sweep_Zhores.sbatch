@@ -30,7 +30,10 @@ module unload python/3.12 2>/dev/null || true
 if [[ -f /trinity/shared/opt/mambaforge3/etc/profile.d/conda.sh ]]; then
   # shellcheck disable=SC1091
   source /trinity/shared/opt/mambaforge3/etc/profile.d/conda.sh
+  # conda activate.d scripts reference unset vars; incompatible with set -u
+  set +u
   conda activate "${CONDA_ENV}"
+  set -u
 fi
 
 read -r -a LAMBDA_ARR <<< "$LAMBDAS"
