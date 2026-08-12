@@ -1,15 +1,21 @@
 # Bitrate-SR pipeline deps (pip).
 #
-# On Zhores (old system GCC): install binary wheels first, then the rest.
+# On Zhores the system g++ is too old for compressai (needs C++17).
+# Install once inside the env:
 #
 #   conda activate /home/timofey.glukhikh/.conda/science_phan
 #   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+#
+#   # modern compiler into THIS env (do not use system /usr/bin/g++)
+#   conda install -y -c conda-forge "gxx_linux-64>=11" "gcc_linux-64>=11"
+#   export CC=$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gcc
+#   export CXX=$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++
+#
 #   pip install --only-binary=:all: "numpy<2.1" "pandas==2.2.3"
 #   pip install -r requirements.txt
 #
-# If torch/torchvision already installed with CUDA, skip the torch line.
+# Verify:  $CXX --version   and   python -c "import compressai, torch; print(torch.cuda.is_available())"
 
-# Pins: avoid source builds on cluster nodes (gcc too old for pandas/meson)
 numpy>=1.24,<2.1
 pandas==2.2.3
 
