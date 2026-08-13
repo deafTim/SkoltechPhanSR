@@ -45,6 +45,7 @@ div2k_bpp_sorted_selection.pkl
 # Logs
 *.log
 /logs
+/image_lists
 
 # OLD
 OLD/
