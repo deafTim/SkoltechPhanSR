@@ -44,6 +44,7 @@ div2k_bpp_sorted_selection.pkl
 
 # Logs
 *.log
+/logs
 
 # OLD
 OLD/
