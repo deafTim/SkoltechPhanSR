@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import defaultdict
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -49,21 +50,41 @@ def main(argv=None):
             f"{str(m.get('SSI_cmpref')):>8s}"
         )
 
-    xs = [m.get("Bpp") for m in rows if m.get("Bpp") is not None]
-    ys = [m.get("PSNR_cmpref") for m in rows if m.get("PSNR_cmpref") is not None]
-    labels = [f"λ={m.get('lambda')}" for m in rows]
+    # Mean RD over images for each lambda (proper sweep curve)
+    by_lam: dict[float, list[tuple[float, float]]] = defaultdict(list)
+    for m in rows:
+        lam = m.get("lambda")
+        bpp = m.get("Bpp")
+        psnr_ref = m.get("PSNR_cmpref")
+        if lam is None or bpp is None or psnr_ref is None:
+            continue
+        by_lam[float(lam)].append((float(bpp), float(psnr_ref)))
 
-    if xs and ys and len(xs) == len(ys):
+    if by_lam:
+        lams = sorted(by_lam.keys())
+        xs, ys, ns = [], [], []
+        print("\nMean over images:")
+        print(f"{'lam':>6s} {'Bpp':>8s} {'PSNRref':>8s} {'n':>4s}")
+        for lam in lams:
+            pts = by_lam[lam]
+            mb = float(np.mean([p[0] for p in pts]))
+            mp = float(np.mean([p[1] for p in pts]))
+            xs.append(mb)
+            ys.append(mp)
+            ns.append(len(pts))
+            print(f"{lam:6.3g} {mb:8.4f} {mp:8.3f} {len(pts):4d}")
+
         order = np.argsort(xs)
         xs = [xs[i] for i in order]
         ys = [ys[i] for i in order]
-        labels = [labels[i] for i in order]
+        labs = [f"λ={lams[i]}" for i in order]
+
         plt.figure(figsize=(6, 4))
-        plt.plot(xs, ys, "o-")
-        for x, y, lab in zip(xs, ys, labels):
-            plt.annotate(lab, (x, y), textcoords="offset points", xytext=(4, 4), fontsize=8)
-        plt.xlabel("Bpp")
-        plt.ylabel("PSNR vs GT (compressed)")
+        plt.plot(xs, ys, "o-", markersize=8)
+        for x, y, lab in zip(xs, ys, labs):
+            plt.annotate(lab, (x, y), textcoords="offset points", xytext=(4, 4), fontsize=9)
+        plt.xlabel("Bpp (mean over images)")
+        plt.ylabel("PSNR vs GT compressed (mean)")
         plt.title("Bitrate-SR ADMM-LoRA rate–distortion")
         plt.grid(True, alpha=0.3)
         if args.save:

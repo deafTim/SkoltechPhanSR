@@ -69,11 +69,17 @@ def minbitrate_superresolution(
             "learningrate": float(lr),
         }
 
+    # CompressAI: train() uses noise for differentiable rate; eval() quantizes (no bpp grads).
+    # Weights stay frozen (requires_grad=False); we only need the train forward path.
+    was_training = model_compression.training
+    model_compression.train()
+    model_supres.train()
+
     ki = 0
+    sr = None
     try:
         for ki in range(outer_iterations):
             ZT = Z + T
-            sr = None
             for it in range(num_iterations):
                 opt.zero_grad()
                 sr = forward_sr(model_supres, input_tensor)
@@ -112,5 +118,8 @@ def minbitrate_superresolution(
         if checkpoint_dir is not None:
             _save_ckpt(pack_state(ki + 1), Path(checkpoint_dir) / "interrupt.pt")
             print(f"Interrupted -> {Path(checkpoint_dir) / 'latest.pt'}")
+    finally:
+        model_compression.train(was_training)
+        model_supres.eval()
 
     return model_supres, Z, T, loss_h, bpp_h, psnr_h

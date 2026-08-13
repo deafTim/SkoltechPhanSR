@@ -3,7 +3,7 @@
 #SBATCH -p gpu_devel
 #SBATCH --gpus=1
 #SBATCH --time=8:00:00
-#SBATCH --mem=32G
+#SBATCH --mem=16G
 #SBATCH -o logs/bitrate_sr_%A_%a.out
 #SBATCH -e logs/bitrate_sr_%A_%a.err
 #SBATCH --array=0-4

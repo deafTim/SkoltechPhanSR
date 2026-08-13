@@ -144,6 +144,10 @@ def build_sr_pretrained(backbone: str, device):
 
 
 def build_compression(device, model_name: str = "cheng2020-attn", quality: int = 6):
+    """Frozen CompressAI model. Default eval() for metrics/select.
+
+    ADMM switches to train() temporarily so rate is differentiable (noise vs quant).
+    """
     from compressai.zoo import models
 
     ensure_hub_file("cheng2020_attn-mse-6-730501f2.pth.tar", CHENG_URL)

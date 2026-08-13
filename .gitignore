@@ -41,6 +41,7 @@ Thumbs.db
 # Results
 div2k_bpp_sorted_selection.pkl
 *.pkl
+/plots
 
 # Logs
 *.log

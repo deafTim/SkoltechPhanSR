@@ -67,7 +67,12 @@ def run_one(args, img_name: str, model_compression) -> dict:
         checkpoint_dir=out_dir,
     )
 
-    metrics = eval_perf_compression(model_compression, Z, gt)
+    # Final RD metrics on LoRA-SR output (what ADMM optimized), not ADMM aux Z.
+    model.eval()
+    with torch.no_grad():
+        sr_final = forward_sr(model, x).detach()
+    metrics = eval_perf_compression(model_compression, sr_final, gt)
+    metrics_z = eval_perf_compression(model_compression, Z, gt)
     metrics.update(
         {
             "img": img_name,
@@ -81,6 +86,10 @@ def run_one(args, img_name: str, model_compression) -> dict:
             "outers": args.outers,
             "crop": crop_meta,
             "tag": tag,
+            "Bpp_Z": metrics_z["Bpp"],
+            "PSNR_cmpref_Z": metrics_z["PSNR_cmpref"],
+            "bpp_train_end": float(bpp_h[-1]) if bpp_h else None,
+            "bpp_train_min": float(min(bpp_h)) if bpp_h else None,
         }
     )
 
@@ -91,11 +100,19 @@ def run_one(args, img_name: str, model_compression) -> dict:
         bpp_values=np.asarray(bpp_h),
         psnr_values=np.asarray(psnr_h),
     )
-    torch.save({"Z_tensor": Z.detach().cpu(), "T_tensor": T.detach().cpu()}, out_dir / "Z.pt")
+    torch.save(
+        {
+            "Z_tensor": Z.detach().cpu(),
+            "T_tensor": T.detach().cpu(),
+            "sr_final": sr_final.detach().cpu(),
+        },
+        out_dir / "Z.pt",
+    )
+    tensor_to_pil(sr_final).save(out_dir / "SR.png")
     tensor_to_pil(Z).save(out_dir / "Z.png")
     tensor_to_pil(gt).save(out_dir / "GT.png")
 
-    keys = ("PSNR", "Bpp", "Bpp(fsize)", "PSNR_cmpref", "SSI_cmpref")
+    keys = ("PSNR", "Bpp", "Bpp(fsize)", "PSNR_cmpref", "SSI_cmpref", "bpp_train_end", "bpp_train_min")
     print("metrics:", json.dumps({k: metrics[k] for k in keys}, indent=2))
     print(f"Saved -> {out_dir}")
     return metrics

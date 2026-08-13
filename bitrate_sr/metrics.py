@@ -45,21 +45,27 @@ def approx_file_bpp(model_compression, image: torch.Tensor) -> float | None:
 
 
 def eval_perf_compression(model_compression, sr: torch.Tensor, ref: torch.Tensor | None = None):
-    with torch.no_grad():
-        out = model_compression(sr)
-        x_hat = out["x_hat"].clamp(0, 1)
-        n_pix = sr.shape[2] * sr.shape[3]
-        result = {
-            "PSNR": float(psnr(x_hat, sr).cpu()),
-            "Bpp": float(bpp_loss(out, n_pix).cpu()),
-            "Bpp(fsize)": approx_file_bpp(model_compression, sr),
-            "SSIM": ssim_np(x_hat, sr),
-            "PSNR_cmpref": None,
-            "SSI_cmpref": None,
-        }
-        if ref is not None:
-            result["PSNR_cmpref"] = float(psnr(x_hat, ref).cpu())
-            result["SSI_cmpref"] = ssim_np(x_hat, ref)
+    """Rate–distortion of compressing `sr` (use eval() for real quantization metrics)."""
+    was_training = model_compression.training
+    model_compression.eval()
+    try:
+        with torch.no_grad():
+            out = model_compression(sr)
+            x_hat = out["x_hat"].clamp(0, 1)
+            n_pix = sr.shape[2] * sr.shape[3]
+            result = {
+                "PSNR": float(psnr(x_hat, sr).cpu()),
+                "Bpp": float(bpp_loss(out, n_pix).cpu()),
+                "Bpp(fsize)": approx_file_bpp(model_compression, sr),
+                "SSIM": ssim_np(x_hat, sr),
+                "PSNR_cmpref": None,
+                "SSI_cmpref": None,
+            }
+            if ref is not None:
+                result["PSNR_cmpref"] = float(psnr(x_hat, ref).cpu())
+                result["SSI_cmpref"] = ssim_np(x_hat, ref)
+    finally:
+        model_compression.train(was_training)
     return result
 
 
