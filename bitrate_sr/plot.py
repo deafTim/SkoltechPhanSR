@@ -26,16 +26,26 @@ def main(argv=None):
     )
     ap.add_argument("--save", type=str, default="")
     ap.add_argument("--show", action="store_true")
+    ap.add_argument(
+        "--method",
+        type=str,
+        default="",
+        help="Filter: admm (no _direct suffix) or direct (dirs ending with _direct)",
+    )
     args = ap.parse_args(argv)
 
     root = Path(args.runs_dir)
     rows = []
     for d in sorted(root.glob("img*_psnr*_lam*")):
+        method_tag = "direct" if "_direct" in d.name else "admm"
+        if args.method and method_tag != args.method:
+            continue
         mf = d / "metrics.json"
         if not mf.exists():
             continue
         m = json.loads(mf.read_text())
         m["_dir"] = d.name
+        m.setdefault("method", method_tag)
         rows.append(m)
 
     if not rows:

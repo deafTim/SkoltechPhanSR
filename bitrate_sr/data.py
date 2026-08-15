@@ -12,7 +12,7 @@ import torch
 from PIL import Image
 from torchvision import transforms
 
-from .lora import inject_lora_conv2d, inject_lora_linear
+from .lora import _nina_attn_expand_ok, inject_lora_conv2d, inject_lora_linear
 
 # Zhores often has broken CA store for torch.hub downloads
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -80,16 +80,29 @@ def _assert_only_lora_trainable(model: torch.nn.Module, label: str, n_layers: in
     )
 
 
-def build_nina_lora(device, lora_r: int = 4, lora_alpha: float = 8.0):
+def build_nina_lora(
+    device,
+    lora_r: int = 4,
+    lora_alpha: float = 8.0,
+    lora_target: str = "all",
+):
+    """lora_target: all | attention_expand (only body.*.body.2.body.3)."""
     from torchsr.models import ninasr_b0
 
     ensure_hub_file("ninasr_b0_x2.pt", NINA_URL)
     model = ninasr_b0(scale=2, pretrained=True).to(device)
     for p in model.parameters():
         p.requires_grad = False
-    n = inject_lora_conv2d(model, r=lora_r, alpha=lora_alpha)
+    target = (lora_target or "all").lower()
+    if target in ("all", ""):
+        filt = None
+    elif target == "attention_expand":
+        filt = _nina_attn_expand_ok
+    else:
+        raise ValueError(f"Unknown lora_target={lora_target!r} (use all|attention_expand)")
+    n = inject_lora_conv2d(model, r=lora_r, alpha=lora_alpha, name_filter=filt)
     model = model.to(device)
-    _assert_only_lora_trainable(model, "Nina+LoRA", n)
+    _assert_only_lora_trainable(model, f"Nina+LoRA[{target}]", n)
     return model
 
 
@@ -114,11 +127,19 @@ def build_swin_lora(
     return model
 
 
-def build_sr_lora(backbone: str, device, lora_r: int = 4, lora_alpha: float = 8.0):
+def build_sr_lora(
+    backbone: str,
+    device,
+    lora_r: int = 4,
+    lora_alpha: float = 8.0,
+    lora_target: str = "all",
+):
     backbone = backbone.lower()
     if backbone == "nina":
-        return build_nina_lora(device, lora_r, lora_alpha)
+        return build_nina_lora(device, lora_r, lora_alpha, lora_target=lora_target)
     if backbone == "swin":
+        if (lora_target or "all").lower() not in ("all", ""):
+            print(f"Warning: lora_target={lora_target!r} ignored for swin (Linear filter is fixed)")
         return build_swin_lora(device, lora_r, lora_alpha)
     raise ValueError(f"Unknown backbone: {backbone} (use nina|swin)")
 
@@ -168,6 +189,28 @@ def parse_img_list(path: Path) -> list[str]:
     return names
 
 
-def run_tag(img_stem: str, target_psnr: float, lam: float, backbone: str, lora_r: int) -> str:
+_LORA_TARGET_TAG = {
+    "attention_expand": "attnexp",
+}
+
+
+def run_tag(
+    img_stem: str,
+    target_psnr: float,
+    lam: float,
+    backbone: str,
+    lora_r: int,
+    method: str = "admm",
+    lora_target: str = "all",
+) -> str:
     psnr_s = str(int(target_psnr)) if float(target_psnr).is_integer() else str(target_psnr)
-    return f"img{img_stem}_{backbone}_psnr{psnr_s}_lam{lam:g}_r{lora_r}"
+    base = f"img{img_stem}_{backbone}_psnr{psnr_s}_lam{lam:g}_r{lora_r}"
+    extras: list[str] = []
+    if method and method != "admm":
+        extras.append(method)
+    lt = (lora_target or "all").lower()
+    if lt not in ("all", ""):
+        extras.append(_LORA_TARGET_TAG.get(lt, lt.replace("_", "")))
+    if extras:
+        return f"{base}_{'_'.join(extras)}"
+    return base

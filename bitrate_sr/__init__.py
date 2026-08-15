@@ -1,4 +1,4 @@
-"""Bitrate-minimizing SR with ADMM + LoRA.
+"""Bitrate-minimizing SR with LoRA (ADMM or direct one-loss).
 
 CLI (prefer bash wrappers in scripts/):
   python -m bitrate_sr.select_bpp

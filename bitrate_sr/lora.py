@@ -57,16 +57,40 @@ class LoRALinear(nn.Module):
         return base + lora
 
 
-def inject_lora_conv2d(module: nn.Module, r: int = 4, alpha: float = 8.0) -> int:
+def _nina_attn_expand_ok(full_name: str) -> bool:
+    """NinaSR SE expand 1x1: body.{k}.body.2.body.3."""
+    parts = full_name.split(".")
+    return (
+        len(parts) >= 4
+        and parts[0] == "body"
+        and parts[2] == "body"
+        and parts[3] == "2"
+        and parts[-1] == "3"
+        and "body.2.body.3" in full_name  # readability
+    )
+
+
+def inject_lora_conv2d(
+    module: nn.Module,
+    r: int = 4,
+    alpha: float = 8.0,
+    name_filter=None,
+    prefix: str = "",
+) -> int:
+    """Wrap Conv2d with LoRAConv2d. Optional name_filter(full_module_path) -> bool."""
     n = 0
     for name, child in list(module.named_children()):
+        full = f"{prefix}.{name}" if prefix else name
         if isinstance(child, (LoRAConv2d, LoRALinear)):
             continue
         if isinstance(child, nn.Conv2d):
-            setattr(module, name, LoRAConv2d(child, r=r, alpha=alpha))
-            n += 1
+            if name_filter is None or name_filter(full):
+                setattr(module, name, LoRAConv2d(child, r=r, alpha=alpha))
+                n += 1
         else:
-            n += inject_lora_conv2d(child, r=r, alpha=alpha)
+            n += inject_lora_conv2d(
+                child, r=r, alpha=alpha, name_filter=name_filter, prefix=full
+            )
     return n
 
 

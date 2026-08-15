@@ -26,18 +26,29 @@ BPP_BATCH_SIZE=4
 # Backbone: nina | swin  (also used for BPP ranking SR)
 BACKBONE="nina"
 
-# ADMM / LoRA
+# Nina LoRA scope: all | attention_expand  (body.*.body.2.body.3 only)
+LORA_TARGET="all"
+
+# Optimizer: admm | direct  (direct = one Adam loss, no Z/T)
+METHOD="direct"
+# Direct only: gt | sr_orig  (PSNR hinges vs ground truth or pretrained SR)
+DIRECT_REF="gt"
+STEPS=200
+CHECKPOINT_EVERY=50
+
+# ADMM / LoRA (OUTERS*INNERS = 1000 when METHOD=admm)
 TARGET_PSNR=35
 LAMBDAS="1.0 0.8 0.6 0.5 0.2"
 LORA_R=4
 LORA_ALPHA=8
 LR=5e-4
 INNERS=100
-OUTERS=20
+OUTERS=10
 
 # Crop (for Swin use smaller, e.g. 128 / 64)
 CROP_SIZE=512
-SCALED_SIZE=256
+# SCALED_SIZE=256
+SCALED_SIZE=128
 CROP_LEFT=1328
 CROP_TOP=826
 

@@ -10,14 +10,16 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 # shellcheck disable=SC1091
-source "$SCRIPT_DIR/bitrate_sr_config.sh"
+source "${BITRATE_SR_CONFIG:-$SCRIPT_DIR/bitrate_sr_config.sh}"
 
 echo "PROJECT_ROOT=$PROJECT_ROOT"
-echo "BACKBONE=$BACKBONE TARGET_PSNR=$TARGET_PSNR"
+echo "METHOD=${METHOD:-admm} LORA_TARGET=${LORA_TARGET:-all} BACKBONE=$BACKBONE TARGET_PSNR=$TARGET_PSNR"
 echo "LAMBDAS=$LAMBDAS"
 echo "IMG_LIST=$IMG_LIST"
 echo "LORA_R=$LORA_R LORA_ALPHA=$LORA_ALPHA LR=$LR INNERS=$INNERS OUTERS=$OUTERS"
+echo "STEPS=${STEPS:-1000} DIRECT_REF=${DIRECT_REF:-gt} CHECKPOINT_EVERY=${CHECKPOINT_EVERY:-200}"
 echo "CROP_SIZE=$CROP_SIZE SCALED_SIZE=$SCALED_SIZE"
+echo "RUNS_DIR=$RUNS_DIR"
 
 if [[ -z "${IMG_LIST}" || ! -f "$IMG_LIST" ]]; then
   echo "IMG_LIST must point to an existing file (got: '${IMG_LIST:-}')" >&2
@@ -28,10 +30,15 @@ COMMON_ARGS=(
   --project-root "$PROJECT_ROOT"
   --data-dir "$DATA_DIR"
   --runs-dir "$RUNS_DIR"
+  --method "${METHOD:-admm}"
+  --direct-ref "${DIRECT_REF:-gt}"
+  --steps "${STEPS:-1000}"
+  --checkpoint-every "${CHECKPOINT_EVERY:-200}"
   --target-psnr "$TARGET_PSNR"
   --backbone "$BACKBONE"
   --lora-r "$LORA_R"
   --lora-alpha "$LORA_ALPHA"
+  --lora-target "${LORA_TARGET:-all}"
   --lr "$LR"
   --inners "$INNERS"
   --outers "$OUTERS"

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""ADMM bitrate-minimizing SR with LoRA (NinaSR or Swin2SR).
+"""Bitrate-minimizing SR with LoRA (NinaSR or Swin2SR).
 
+Methods: ADMM (default) or direct one-loss Adam.
 Prefer: edit scripts/bitrate_sr_config.sh, then bash scripts/run_sweep.sh
 """
 
@@ -23,6 +24,7 @@ from .data import (
     parse_img_list,
     run_tag,
 )
+from .direct import minbitrate_superresolution_direct
 from .metrics import eval_perf_compression, forward_sr, tensor_to_pil
 
 
@@ -36,10 +38,20 @@ def run_one(args, img_name: str, model_compression) -> dict:
     if not img_path.exists():
         raise FileNotFoundError(img_path)
 
-    tag = run_tag(Path(img_name).stem, args.target_psnr, args.lam, args.backbone, args.lora_r)
+    method = (args.method or "admm").lower()
+    lora_target = (getattr(args, "lora_target", None) or "all").lower()
+    tag = run_tag(
+        Path(img_name).stem,
+        args.target_psnr,
+        args.lam,
+        args.backbone,
+        args.lora_r,
+        method=method,
+        lora_target=lora_target,
+    )
     out_dir = runs_dir / tag
     out_dir.mkdir(parents=True, exist_ok=True)
-    print(f"=== {tag} ===\ndevice={device} out_dir={out_dir}")
+    print(f"=== {tag} ===\nmethod={method} lora_target={lora_target} device={device} out_dir={out_dir}")
 
     x, gt, crop_meta = load_lr_hr_pair(
         img_path,
@@ -50,33 +62,58 @@ def run_one(args, img_name: str, model_compression) -> dict:
         device=device,
     )
 
-    model = build_sr_lora(args.backbone, device, args.lora_r, args.lora_alpha)
+    model = build_sr_lora(
+        args.backbone,
+        device,
+        args.lora_r,
+        args.lora_alpha,
+        lora_target=lora_target,
+    )
     with torch.no_grad():
         sr_orig = forward_sr(model, x).detach()
 
-    model, Z, T, loss_h, bpp_h, psnr_h = minbitrate_superresolution(
-        x,
-        sr_orig,
-        args.target_psnr,
-        args.lam,
-        args.inners,
-        model,
-        model_compression,
-        lr=args.lr,
-        outer_iterations=args.outers,
-        checkpoint_dir=out_dir,
-    )
+    Z = T = None
+    if method == "admm":
+        model, Z, T, loss_h, bpp_h, psnr_h = minbitrate_superresolution(
+            x,
+            sr_orig,
+            args.target_psnr,
+            args.lam,
+            args.inners,
+            model,
+            model_compression,
+            lr=args.lr,
+            outer_iterations=args.outers,
+            checkpoint_dir=out_dir,
+        )
+    elif method == "direct":
+        model, _sr_last, loss_h, bpp_h, psnr_h = minbitrate_superresolution_direct(
+            x,
+            gt,
+            sr_orig,
+            args.target_psnr,
+            args.lam,
+            model,
+            model_compression,
+            lr=args.lr,
+            steps=args.steps,
+            checkpoint_dir=out_dir,
+            checkpoint_every=args.checkpoint_every,
+            ref=args.direct_ref,
+        )
+    else:
+        raise ValueError(f"Unknown method={method!r} (use admm|direct)")
 
-    # Final RD metrics on LoRA-SR output (what ADMM optimized), not ADMM aux Z.
     model.eval()
     with torch.no_grad():
         sr_final = forward_sr(model, x).detach()
     metrics = eval_perf_compression(model_compression, sr_final, gt)
-    metrics_z = eval_perf_compression(model_compression, Z, gt)
     metrics.update(
         {
             "img": img_name,
             "backbone": args.backbone,
+            "method": method,
+            "lora_target": lora_target,
             "lambda": args.lam,
             "target_psnr": args.target_psnr,
             "lora_r": args.lora_r,
@@ -84,14 +121,18 @@ def run_one(args, img_name: str, model_compression) -> dict:
             "lr": args.lr,
             "inners": args.inners,
             "outers": args.outers,
+            "steps": args.steps if method == "direct" else args.outers * args.inners,
+            "direct_ref": args.direct_ref if method == "direct" else None,
             "crop": crop_meta,
             "tag": tag,
-            "Bpp_Z": metrics_z["Bpp"],
-            "PSNR_cmpref_Z": metrics_z["PSNR_cmpref"],
             "bpp_train_end": float(bpp_h[-1]) if bpp_h else None,
             "bpp_train_min": float(min(bpp_h)) if bpp_h else None,
         }
     )
+    if Z is not None:
+        metrics_z = eval_perf_compression(model_compression, Z, gt)
+        metrics["Bpp_Z"] = metrics_z["Bpp"]
+        metrics["PSNR_cmpref_Z"] = metrics_z["PSNR_cmpref"]
 
     (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
     np.savez_compressed(
@@ -100,35 +141,47 @@ def run_one(args, img_name: str, model_compression) -> dict:
         bpp_values=np.asarray(bpp_h),
         psnr_values=np.asarray(psnr_h),
     )
-    torch.save(
-        {
-            "Z_tensor": Z.detach().cpu(),
-            "T_tensor": T.detach().cpu(),
-            "sr_final": sr_final.detach().cpu(),
-        },
-        out_dir / "Z.pt",
-    )
+    payload = {"sr_final": sr_final.detach().cpu()}
+    if Z is not None:
+        payload["Z_tensor"] = Z.detach().cpu()
+        payload["T_tensor"] = T.detach().cpu()
+        tensor_to_pil(Z).save(out_dir / "Z.png")
+    torch.save(payload, out_dir / "Z.pt")
     tensor_to_pil(sr_final).save(out_dir / "SR.png")
-    tensor_to_pil(Z).save(out_dir / "Z.png")
     tensor_to_pil(gt).save(out_dir / "GT.png")
 
-    keys = ("PSNR", "Bpp", "Bpp(fsize)", "PSNR_cmpref", "SSI_cmpref", "bpp_train_end", "bpp_train_min")
+    keys = ("method", "PSNR", "Bpp", "Bpp(fsize)", "PSNR_cmpref", "SSI_cmpref", "bpp_train_end", "bpp_train_min")
     print("metrics:", json.dumps({k: metrics[k] for k in keys}, indent=2))
     print(f"Saved -> {out_dir}")
     return metrics
 
 
 def build_argparser():
-    p = argparse.ArgumentParser(description="ADMM + LoRA SR (nina|swin)")
+    p = argparse.ArgumentParser(description="Bitrate-SR LoRA (admm|direct; nina|swin)")
     p.add_argument("--project-root", default=str(DEFAULT_PROJECT_ROOT))
     p.add_argument("--data-dir", default=None)
     p.add_argument("--runs-dir", default=None, help="Output root (default: PROJECT/runs/bitrate_sr)")
     p.add_argument("--img-list", required=True, help="Txt with one DIV2K filename per line")
     p.add_argument("--lambda", dest="lam", type=float, required=True)
+    p.add_argument("--method", default="admm", choices=["admm", "direct"])
+    p.add_argument(
+        "--direct-ref",
+        default="gt",
+        choices=["gt", "sr_orig"],
+        help="Direct method: PSNR hinges vs GT or pretrained SR",
+    )
+    p.add_argument("--steps", type=int, default=1000, help="Direct method: Adam steps")
+    p.add_argument("--checkpoint-every", type=int, default=200, help="Direct: save every N steps (0=off)")
     p.add_argument("--target-psnr", type=float, default=35.0)
     p.add_argument("--backbone", default="nina", choices=["nina", "swin"])
     p.add_argument("--lora-r", type=int, default=4)
     p.add_argument("--lora-alpha", type=float, default=8.0)
+    p.add_argument(
+        "--lora-target",
+        default="all",
+        choices=["all", "attention_expand"],
+        help="Nina: all Conv2d LoRA, or only body.*.body.2.body.3",
+    )
     p.add_argument("--lr", type=float, default=5e-4)
     p.add_argument("--inners", type=int, default=100)
     p.add_argument("--outers", type=int, default=20)
@@ -150,7 +203,7 @@ def main(argv=None):
         return 2
 
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
-    print(f"Loading compression on {device} ...")
+    print(f"Loading compression on {device} ... method={args.method}")
     compression = build_compression(device, args.compression_model, args.compression_quality)
 
     images = list(dict.fromkeys(parse_img_list(img_list_path)))
@@ -162,7 +215,10 @@ def main(argv=None):
 
     if len(all_metrics) > 1:
         runs_dir = Path(args.runs_dir) if args.runs_dir else Path(args.project_root) / "runs" / "bitrate_sr"
-        summary = runs_dir / f"summary_{args.backbone}_lam{args.lam:g}_psnr{args.target_psnr:g}.json"
+        method = (args.method or "admm").lower()
+        lt = (args.lora_target or "all").lower()
+        lt_tag = "" if lt in ("all", "") else f"_{ {'attention_expand': 'attnexp'}.get(lt, lt)}"
+        summary = runs_dir / f"summary_{method}_{args.backbone}_lam{args.lam:g}_psnr{args.target_psnr:g}{lt_tag}.json"
         summary.parent.mkdir(parents=True, exist_ok=True)
         summary.write_text(json.dumps(all_metrics, indent=2))
         print(f"Summary -> {summary}")
