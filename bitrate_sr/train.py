@@ -50,6 +50,11 @@ def run_one(args, img_name: str, model_compression) -> dict:
         lora_target=lora_target,
     )
     out_dir = runs_dir / tag
+    metrics_path = out_dir / "metrics.json"
+    if metrics_path.is_file():
+        print(f"=== skip {tag} (exists {metrics_path}) ===")
+        return json.loads(metrics_path.read_text())
+
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"=== {tag} ===\nmethod={method} lora_target={lora_target} device={device} out_dir={out_dir}")
 
