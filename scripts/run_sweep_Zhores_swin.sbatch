@@ -6,9 +6,9 @@
 #SBATCH --mem=16G
 #SBATCH -o logs/bitrate_sr_swin_%A_%a.out
 #SBATCH -e logs/bitrate_sr_swin_%A_%a.err
-#SBATCH --array=0-4
+#SBATCH --array=0-7
 #
-# Swin2SR + LoRA, 10-image pilot (bpp_diverse_10.txt).
+# Swin2SR + LoRA, all DIV2K train HR (div2k_train_hr_all.txt).
 # From repo root:
 #   sbatch scripts/run_sweep_Zhores_swin.sbatch
 

@@ -26,6 +26,9 @@ BPP_CSV="${PROJECT_ROOT}/runs/bitrate_sr/bpp_all_sorted.csv"
 
 IMG_LIST="image_lists/div2k_train_hr_all.txt"
 
+# All λ (ascending). Existing metrics.json tags are skipped.
+LAMBDAS="0.1 0.2 0.3 0.4 0.5 0.6 0.8 1.0"
+
 METHOD="direct"
 DIRECT_REF="gt"
 STEPS=200

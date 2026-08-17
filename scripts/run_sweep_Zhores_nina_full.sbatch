@@ -6,7 +6,7 @@
 #SBATCH --mem=16G
 #SBATCH -o logs/bitrate_sr_nina_full_%A_%a.out
 #SBATCH -e logs/bitrate_sr_nina_full_%A_%a.err
-#SBATCH --array=0-4
+#SBATCH --array=0-7
 #
 # NinaSR + full LoRA, all DIV2K train HR (div2k_train_hr_all.txt).
 # From repo root:
