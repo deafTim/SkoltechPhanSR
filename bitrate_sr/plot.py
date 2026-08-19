@@ -30,7 +30,7 @@ def main(argv=None):
         "--method",
         type=str,
         default="",
-        help="Filter: admm (no _direct suffix) or direct (dirs ending with _direct)",
+        help="Filter: admm (dirs with _admm or no method suffix) or direct (_direct)",
     )
     args = ap.parse_args(argv)
 

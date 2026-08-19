@@ -89,7 +89,7 @@ def run_one(args, img_name: str, model_compression) -> dict:
             model_compression,
             lr=args.lr,
             outer_iterations=args.outers,
-            checkpoint_dir=out_dir,
+            checkpoint_dir=out_dir if args.checkpoint_every > 0 else None,
         )
     elif method == "direct":
         model, _sr_last, loss_h, bpp_h, psnr_h = minbitrate_superresolution_direct(

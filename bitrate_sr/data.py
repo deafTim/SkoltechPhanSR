@@ -206,7 +206,7 @@ def run_tag(
     psnr_s = str(int(target_psnr)) if float(target_psnr).is_integer() else str(target_psnr)
     base = f"img{img_stem}_{backbone}_psnr{psnr_s}_lam{lam:g}_r{lora_r}"
     extras: list[str] = []
-    if method and method != "admm":
+    if method:
         extras.append(method)
     lt = (lora_target or "all").lower()
     if lt not in ("all", ""):
