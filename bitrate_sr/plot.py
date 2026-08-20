@@ -95,7 +95,13 @@ def main(argv=None):
             plt.annotate(lab, (x, y), textcoords="offset points", xytext=(4, 4), fontsize=9)
         plt.xlabel("Bpp (mean over images)")
         plt.ylabel("PSNR vs GT compressed (mean)")
-        plt.title("Bitrate-SR ADMM-LoRA rate–distortion")
+        if args.save:
+            title = Path(args.save).stem.replace("rd_", "").replace("_", " ")
+        elif args.method:
+            title = f"Bitrate-SR LoRA ({args.method})"
+        else:
+            title = "Bitrate-SR LoRA rate–distortion"
+        plt.title(title)
         plt.grid(True, alpha=0.3)
         if args.save:
             Path(args.save).parent.mkdir(parents=True, exist_ok=True)
