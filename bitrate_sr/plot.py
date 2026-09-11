@@ -30,14 +30,34 @@ def main(argv=None):
         "--method",
         type=str,
         default="",
-        help="Filter: admm (dirs with _admm or no method suffix) or direct (_direct)",
+        help="Filter: direct | admm | admm_wd (warm-start) | admm_old (old-notebook ladder)",
+    )
+    ap.add_argument(
+        "--group-by",
+        type=str,
+        default="auto",
+        choices=["auto", "lambda", "target_psnr"],
+        help="Sweep axis; auto = target_psnr for admm_old, lambda otherwise",
     )
     args = ap.parse_args(argv)
+
+    group_key = args.group_by
+    if group_key == "auto":
+        group_key = "target_psnr" if args.method == "admm_old" else "lambda"
 
     root = Path(args.runs_dir)
     rows = []
     for d in sorted(root.glob("img*_psnr*_lam*")):
-        method_tag = "direct" if "_direct" in d.name else "admm"
+        if "_direct" in d.name:
+            method_tag = "direct"
+        elif "_admm_wd" in d.name:
+            method_tag = "admm_wd"
+        elif "_admm_old" in d.name:
+            method_tag = "admm_old"
+        elif "_admm" in d.name:
+            method_tag = "admm"
+        else:
+            method_tag = "admm"
         if args.method and method_tag != args.method:
             continue
         mf = d / "metrics.json"
@@ -52,18 +72,19 @@ def main(argv=None):
         print(f"No metrics found under {root}")
         return 1
 
-    print(f"{'dir':45s} {'lam':>6s} {'Bpp':>8s} {'PSNRref':>8s} {'SSIMref':>8s}")
+    short = "lam" if group_key == "lambda" else "tgt"
+    print(f"{'dir':45s} {short:>6s} {'Bpp':>8s} {'PSNRref':>8s} {'SSIMref':>8s}")
     for m in rows:
         print(
-            f"{m.get('_dir', ''):45s} {m.get('lambda', float('nan')):6.3g} "
+            f"{m.get('_dir', ''):45s} {m.get(group_key, float('nan')):6.3g} "
             f"{m.get('Bpp', float('nan')):8.4f} {m.get('PSNR_cmpref', float('nan')):8.3f} "
             f"{str(m.get('SSI_cmpref')):>8s}"
         )
 
-    # Mean RD over images for each lambda (proper sweep curve)
+    # Mean RD over images for each sweep value (proper sweep curve)
     by_lam: dict[float, list[tuple[float, float]]] = defaultdict(list)
     for m in rows:
-        lam = m.get("lambda")
+        lam = m.get(group_key)
         bpp = m.get("Bpp")
         psnr_ref = m.get("PSNR_cmpref")
         if lam is None or bpp is None or psnr_ref is None:
@@ -74,7 +95,7 @@ def main(argv=None):
         lams = sorted(by_lam.keys())
         xs, ys, ns = [], [], []
         print("\nMean over images:")
-        print(f"{'lam':>6s} {'Bpp':>8s} {'PSNRref':>8s} {'n':>4s}")
+        print(f"{short:>6s} {'Bpp':>8s} {'PSNRref':>8s} {'n':>4s}")
         for lam in lams:
             pts = by_lam[lam]
             mb = float(np.mean([p[0] for p in pts]))
@@ -87,7 +108,10 @@ def main(argv=None):
         order = np.argsort(xs)
         xs = [xs[i] for i in order]
         ys = [ys[i] for i in order]
-        labs = [f"λ={lams[i]}" for i in order]
+        if group_key == "lambda":
+            labs = [f"λ={lams[i]:g}" for i in order]
+        else:
+            labs = [f"{lams[i]:g} dB" for i in order]
 
         plt.figure(figsize=(6, 4))
         plt.plot(xs, ys, "o-", markersize=8)

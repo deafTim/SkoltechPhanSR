@@ -15,6 +15,15 @@ def _save_ckpt(state: dict, path: Path):
     torch.save(state, path.parent / "latest.pt")
 
 
+def _project_psnr_ball(d: torch.Tensor, center: torch.Tensor, delta: torch.Tensor) -> torch.Tensor:
+    """Euclidean projection of d onto {z : ||z - center||_2 <= delta}."""
+    e = d - center
+    n_e = torch.linalg.norm(e.reshape(-1))
+    if n_e <= delta:
+        return d.detach()
+    return (center + delta * e / n_e).detach()
+
+
 def minbitrate_superresolution(
     input_tensor,
     sr_orig,
@@ -27,8 +36,14 @@ def minbitrate_superresolution(
     lr: float = 5e-4,
     outer_iterations: int = 20,
     checkpoint_dir: Path | None = None,
+    z_init: torch.Tensor | None = None,
+    t_init: torch.Tensor | None = None,
+    project_z_init: bool = True,
 ):
-    """Fresh ADMM run. Returns model, Z, T, loss/bpp/psnr histories."""
+    """ADMM run. Optional warm-start: z_init / t_init (e.g. from a direct SR run).
+
+    Returns model, Z, T, loss/bpp/psnr histories.
+    """
     device = input_tensor.device
     if sr_orig is None:
         with torch.no_grad():
@@ -36,14 +51,24 @@ def minbitrate_superresolution(
 
     max_i = 1.0
     n_pix = sr_orig.shape[0] * sr_orig.shape[2] * sr_orig.shape[3]
-    Z = sr_orig.clone()
-    T = torch.zeros_like(sr_orig)
     delta = torch.sqrt(
         torch.tensor(
             sr_orig.shape[1] * n_pix * (max_i ** 2) / (10 ** (target_psnr / 10)),
             device=device,
             dtype=sr_orig.dtype,
         )
+    )
+
+    if z_init is None:
+        Z = sr_orig.clone()
+    else:
+        Z = z_init.to(device=device, dtype=sr_orig.dtype)
+        if project_z_init:
+            Z = _project_psnr_ball(Z, sr_orig, delta)
+    T = (
+        torch.zeros_like(sr_orig)
+        if t_init is None
+        else t_init.to(device=device, dtype=sr_orig.dtype).detach()
     )
 
     params = [p for p in model_supres.parameters() if p.requires_grad]
@@ -105,9 +130,7 @@ def minbitrate_superresolution(
                 psnr_h.append(float(psnr_sr.item()))
 
             D = sr - T
-            E = D - sr_orig
-            nE = torch.linalg.norm(E.reshape(-1))
-            Z = (D if nE <= delta else sr_orig + delta * E / nE).detach()
+            Z = _project_psnr_ball(D, sr_orig, delta)
             T = (T + Z - sr).detach()
 
             if checkpoint_dir is not None:
