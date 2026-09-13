@@ -30,20 +30,20 @@ def main(argv=None):
         "--method",
         type=str,
         default="",
-        help="Filter: direct | admm | admm_wd (warm-start) | admm_old (old-notebook ladder)",
+        help="Filter: direct | admm | admm_wd (warm-start) | admm_old (old loss)",
     )
     ap.add_argument(
         "--group-by",
         type=str,
         default="auto",
         choices=["auto", "lambda", "target_psnr"],
-        help="Sweep axis; auto = target_psnr for admm_old, lambda otherwise",
+        help="Sweep axis; auto = lambda (use target_psnr only for PSNR-ladder runs)",
     )
     args = ap.parse_args(argv)
 
     group_key = args.group_by
     if group_key == "auto":
-        group_key = "target_psnr" if args.method == "admm_old" else "lambda"
+        group_key = "lambda"
 
     root = Path(args.runs_dir)
     rows = []

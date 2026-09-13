@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Swin2SR + LoRA, old-notebook ADMM (admm_oldlike), 10 BPP-diverse images.
-# RD curve comes from the target-PSNR ladder at fixed lambda, as in
-# train_superresolution_compression_admm_div2K_0025_old.ipynb
-# Tags: imgXXXX_swin_psnr{36..32}_lam1_r4_admm_old
+# Swin2SR + LoRA, old-notebook ADMM loss (admm_oldlike), 10 BPP-diverse images.
+# Same λ sweep as regular ADMM, but with the old loss:
+#   |PSNR-target| (no 0.5 hinge), second term λ/10, lr=1e-4, Adam restarts.
+# Tags: imgXXXX_swin_psnr35_lam*_r4_admm_old
 # Runs: ${PROJECT_ROOT}/runs/bitrate_sr_swin_admm_old_10
 # Plot: rd_swin_admm_old_10.png
 #
@@ -27,17 +27,18 @@ IMG_LIST="image_lists/bpp_diverse_10.txt"
 
 METHOD="admm_oldlike"
 PLOT_METHOD="admm_old"
+PLOT_GROUP_BY="lambda"
 
-# Old notebook: lambda fixed at 1, rate swept by lowering the target PSNR.
-LAMBDAS="1.0"
-ANNEAL_PSNRS="36 35 34 33 32"
-TARGET_PSNR=36
+# λ sweep like regular ADMM; target PSNR fixed (no annealing ladder).
+LAMBDAS="0.1 0.2 0.3 0.4 0.5 0.6 0.8 1.0"
+TARGET_PSNR=35
+ANNEAL_PSNRS=""
 
-# Old notebook: lr 1e-4, fresh Adam per repeat, plain |dPSNR| penalties.
+# Old-notebook loss / optimizer settings.
 LR=1e-4
 INNERS=100
-OUTERS=10
-REPEATS=2
+OUTERS=20
+REPEATS=1
 CHECKPOINT_EVERY=0
 
 CROP_SIZE=128

@@ -7,8 +7,9 @@ the notebook hold the PSNR constraint:
   * the SR-vs-(Z+T) term is weighted lambda/10, not lambda
   * a fresh Adam is created for every `repeats` restart, lr 1e-4 by default
 
-The rate/quality trade-off is meant to be swept via `target_psnr` (36 -> 32 dB,
-warm-starting Z/T/LoRA from the previous rung), not via lambda.
+The rate/quality trade-off is swept via lambda at a fixed target_psnr (same
+as the regular ADMM sweeps). Optional `--anneal-psnrs` still supports a
+target-PSNR ladder if needed.
 """
 
 from __future__ import annotations

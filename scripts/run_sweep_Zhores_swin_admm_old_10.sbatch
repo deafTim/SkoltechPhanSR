@@ -6,12 +6,10 @@
 #SBATCH --mem=16G
 #SBATCH -o logs/bitrate_sr_swin_admm_old_10_%A_%a.out
 #SBATCH -e logs/bitrate_sr_swin_admm_old_10_%A_%a.err
-#SBATCH --array=0-9
+#SBATCH --array=0-7
 #
-# swin_admm_old_10: old-notebook ADMM, one array task per image.
-# Each task walks the whole target-PSNR ladder (ANNEAL_PSNRS) with lambda fixed,
-# warm-starting LoRA/Z/T from the previous rung. Finished rungs are skipped on
-# resubmit, so just resubmit after a 12h timeout.
+# swin_admm_old_10: old-notebook ADMM loss, array = one lambda (all 10 images).
+# Finished tags are skipped on resubmit after a 12h timeout.
 # From repo root:
 #   sbatch scripts/run_sweep_Zhores_swin_admm_old_10.sbatch
 
@@ -33,29 +31,25 @@ if [[ -f /trinity/shared/opt/mambaforge3/etc/profile.d/conda.sh ]]; then
   set -u
 fi
 
+read -r -a LAMBDA_ARR <<< "$LAMBDAS"
+L="${LAMBDA_ARR[$SLURM_ARRAY_TASK_ID]}"
+if [[ -z "${L:-}" ]]; then
+  echo "No lambda for SLURM_ARRAY_TASK_ID=$SLURM_ARRAY_TASK_ID (LAMBDAS='$LAMBDAS')" >&2
+  exit 1
+fi
+
 if [[ -z "${IMG_LIST}" || ! -f "$IMG_LIST" ]]; then
   echo "IMG_LIST must point to an existing file (got: '${IMG_LIST:-}')" >&2
   exit 1
 fi
 
-# Array index selects the image; lambda is fixed for this method.
-N_IMGS="$(awk 'NF && $1 !~ /^#/' "$IMG_LIST" | wc -l | tr -d ' ')"
-IMG_INDEX="${SLURM_ARRAY_TASK_ID:-0}"
-if (( IMG_INDEX >= N_IMGS )); then
-  echo "IMG_INDEX=$IMG_INDEX >= images in $IMG_LIST ($N_IMGS); nothing to do"
-  exit 0
-fi
-
-read -r -a LAMBDA_ARR <<< "$LAMBDAS"
-L="${LAMBDA_ARR[0]}"
-
 LOG_DIR="${RUNS_DIR}/logs"
 mkdir -p "$LOG_DIR"
-LOG_FILE="${LOG_DIR}/admm_old_swin_job${SLURM_ARRAY_JOB_ID:-local}_img${IMG_INDEX}.log"
+LOG_FILE="${LOG_DIR}/admm_old_swin_job${SLURM_ARRAY_JOB_ID:-local}_lam${L}.log"
 
 echo "REPO_ROOT=$REPO_ROOT backbone=$BACKBONE method=$METHOD lambda=$L"
-echo "ladder='$ANNEAL_PSNRS' repeats=$REPEATS outers=$OUTERS inners=$INNERS lr=$LR"
-echo "img_index=$IMG_INDEX/$N_IMGS runs=$RUNS_DIR log=$LOG_FILE"
+echo "target_psnr=$TARGET_PSNR anneal='${ANNEAL_PSNRS:-}' repeats=$REPEATS outers=$OUTERS inners=$INNERS lr=$LR"
+echo "runs=$RUNS_DIR log=$LOG_FILE"
 
 python -u -m bitrate_sr.train \
   --project-root "$PROJECT_ROOT" \
@@ -63,8 +57,8 @@ python -u -m bitrate_sr.train \
   --runs-dir "$RUNS_DIR" \
   --method "$METHOD" \
   --target-psnr "$TARGET_PSNR" \
-  --anneal-psnrs "$ANNEAL_PSNRS" \
-  --repeats "$REPEATS" \
+  --anneal-psnrs "${ANNEAL_PSNRS:-}" \
+  --repeats "${REPEATS:-1}" \
   --checkpoint-every "${CHECKPOINT_EVERY:-0}" \
   --backbone "$BACKBONE" \
   --lora-r "$LORA_R" \
@@ -80,5 +74,4 @@ python -u -m bitrate_sr.train \
   --compression-model "$COMPRESSION_MODEL" \
   --compression-quality "$COMPRESSION_QUALITY" \
   --img-list "$IMG_LIST" \
-  --img-index "$IMG_INDEX" \
   --lambda "$L" 2>&1 | tee -a "$LOG_FILE"
