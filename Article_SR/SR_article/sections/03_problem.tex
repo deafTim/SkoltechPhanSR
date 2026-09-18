@@ -1,0 +1,44 @@
+\section{Problem Formulation}
+\label{sec:problem}
+
+Let \(f_{\theta_0}\) be a pretrained super-resolution (SR) model that maps a low-resolution image \(x_{\mathrm{LR}}\) to a high-resolution reconstruction
+\begin{equation}
+  x_{\mathrm{ref}} = f_{\theta_0}(x_{\mathrm{LR}}).
+\end{equation}
+The image \(x_{\mathrm{ref}}\) is the \emph{reference} throughout. The goal is not to improve reconstruction relative to ground-truth HR; it is to adapt the SR model so that its output becomes more compressible under a fixed downstream codec while staying faithful to \(x_{\mathrm{ref}}\).
+
+Let \(\theta\) denote trainable parameters initialised from \(\theta_0\), and define
+\begin{equation}
+  x = f_{\theta}(x_{\mathrm{LR}}), \qquad
+  y = C(x), \qquad
+  \hat{x} = D(y),
+  \label{eq:pipeline}
+\end{equation}
+where \(C\) and \(D\) are the encoder and decoder of a fixed neural image codec, \(y\) is the latent code, and \(\hat{x}\) is the decompressed reconstruction. The bitrate associated with \(y\) is estimated by the codec entropy model and denoted \(R(y)\).
+
+Fidelity is measured by PSNR (pixel values in \([0,1]\)):
+\begin{equation}
+  \mathrm{PSNR}(a,b)
+  = 10\log_{10}\!\left(\frac{CHW}{\|a-b\|_2^2}\right).
+\end{equation}
+
+The constrained optimisation problem is
+\begin{equation}
+  \begin{aligned}
+    \min_{\theta}\quad
+    & R\!\bigl(C(f_{\theta}(x_{\mathrm{LR}}))\bigr) \\
+    \text{s.t.}\quad
+    & \mathrm{PSNR}\bigl(f_{\theta}(x_{\mathrm{LR}}),\, x_{\mathrm{ref}}\bigr)
+      \ge P_{\mathrm{target}}, \\
+    & \mathrm{PSNR}\bigl(D(C(f_{\theta}(x_{\mathrm{LR}}))),\, x_{\mathrm{ref}}\bigr)
+      \ge P_{\mathrm{target}}.
+  \end{aligned}
+  \label{eq:compression_aware_problem}
+\end{equation}
+
+Design choices that define the setting:
+\begin{enumerate}
+    \item the codec stays fixed; only the SR model is adapted;
+    \item no ground-truth HR as the optimisation reference---only \(x_{\mathrm{ref}}\);
+    \item adaptation is \emph{per-image}, because compressibility depends strongly on image-specific statistics.
+\end{enumerate}

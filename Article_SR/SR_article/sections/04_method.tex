@@ -1,0 +1,62 @@
+\section{Method}
+\label{sec:method}
+
+\subsection{ADMM-inspired variable splitting}
+
+Bitrate lives in the latent space of the codec, while fidelity is measured in image space. Direct joint optimisation is difficult because both the SR network and the neural codec are highly nonlinear. To decouple the competing objectives, an ADMM-inspired variable-splitting strategy is introduced.
+
+An auxiliary image variable \(z\) is constrained to the feasible set
+\begin{equation}
+  \mathcal{B}
+  = \bigl\{ z : \mathrm{PSNR}(z, x_{\mathrm{ref}}) \ge P_{\mathrm{target}} \bigr\},
+\end{equation}
+which is a closed ball in image space centred at \(x_{\mathrm{ref}}\) with radius \(\delta\) determined by \(P_{\mathrm{target}}\):
+\begin{equation}
+  \delta^2 = \frac{C_{\mathrm{ch}} H W}{10^{P_{\mathrm{target}} / 10}}.
+\end{equation}
+
+The PSNR constraint on the compressed reconstruction is incorporated as a soft penalty. The reformulated problem separates bitrate-oriented updates on \(x = f_{\theta}(x_{\mathrm{LR}})\) from fidelity enforcement via projection of \(z\), coupled by \(x \approx z\).
+
+\subsection{Practical training loss}
+
+During the SR-parameter update, a practical penalty objective is
+\begin{equation}
+\mathcal{L}
+=
+10 \log_{10}(\mathrm{BPP} + \varepsilon)
++ \lambda_1 \bigl| \mathrm{PSNR}_{\mathrm{comp}} - P_{\mathrm{target}} \bigr|
++ \lambda_2 \bigl| \mathrm{PSNR}_{\mathrm{sr}} - P_{\mathrm{target}} \bigr|,
+\label{eq:training_loss}
+\end{equation}
+where \(\mathrm{PSNR}_{\mathrm{comp}}\) compares the decompressed image to \(x_{\mathrm{ref}}\) and \(\mathrm{PSNR}_{\mathrm{sr}}\) ties the SR image to the current auxiliary target. The bitrate term drives cheaper compressed representations, while the PSNR terms discourage drift away from the desired high-fidelity region.
+
+\subsection{Per-image algorithm}
+
+\begin{enumerate}
+    \item Load an HR crop, construct \(x_{\mathrm{LR}}\) by bicubic downsampling, and compute \(x_{\mathrm{ref}} = f_{\theta_0}(x_{\mathrm{LR}})\).
+    \item Freeze the compression model. Choose trainable SR parameters: full NinaSR, full Swin2SR, or only LoRA adapters in Swin2SR.
+    \item Initialise the auxiliary image \(Z = x_{\mathrm{ref}}\) and the scaled dual variable \(T = 0\).
+    \item At each outer iteration, set the auxiliary target to \(Z + T\).
+    \item Inner loop: compute \(x_{\mathrm{SR}} = f_{\theta}(x_{\mathrm{LR}})\), compress it, estimate BPP and PSNR terms, and update \(\theta\) by minimising~\eqref{eq:training_loss}.
+    \item Project the SR image onto the feasible PSNR ball around \(x_{\mathrm{ref}}\). With \(D = x_{\mathrm{SR}} - T\) and \(E = D - x_{\mathrm{ref}}\), set \(Z = D\) if \(\|E\|_2 \le \delta\), otherwise \(Z = x_{\mathrm{ref}} + \delta E / (\|E\|_2 + \varepsilon)\).
+    \item Update the scaled dual variable: \(T \leftarrow T + Z - x_{\mathrm{SR}}\).
+    \item Select the operating point (e.g., lowest bpp subject to staying within about \(1\,\mathrm{dB}\) of the quality budget).
+\end{enumerate}
+
+The procedure is ADMM-\emph{inspired}: it is a structured alternating scheme that makes the bitrate--fidelity trade-off controllable, not a claim of formal convex ADMM convergence.
+
+\subsection{Backbones and implementation sketch}
+
+The framework supports:
+\begin{itemize}
+    \item \textbf{NinaSR} at \(\times 2\) and \(\times 4\) (full fine-tuning);
+    \item \textbf{Swin2SR} (full fine-tuning);
+    \item \textbf{Swin2SR+LoRA} (frozen backbone; adapters on attention modules, e.g.\ rank \(8\), \(\alpha=16\), targets \texttt{query}, \texttt{value}).
+\end{itemize}
+
+In the reference experimental setting, the frozen codec is CompressAI \texttt{cheng2020-anchor} at quality level \(6\). Typical hyperparameter grids use
+\[
+\lambda_1, \lambda_2 \in \{0.3, 0.5, 0.7, 1.0\}, \qquad
+\mathrm{lr} \in \{10^{-4}, 3\cdot 10^{-4}, 10^{-3}\},
+\]
+with on the order of \(20\) inner and \(20\) outer steps per run, and screened DIV2K crops spanning a broad bpp range.

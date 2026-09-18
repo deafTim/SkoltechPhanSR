@@ -1,0 +1,10 @@
+\begin{abstract}
+Super-resolution (SR) improves the visual quality of low-resolution images, but the high-frequency detail produced by modern SR models often increases the bitrate required for subsequent compression. In real pipelines the upscaled image is usually compressed again for storage or transmission, so an image that looks better after SR may become more expensive to encode.
+
+We address this mismatch through compression-aware \emph{per-image} fine-tuning of a pretrained SR backbone under a \emph{fixed} neural codec. The pretrained SR output is treated as the reference to preserve; only the SR branch is adapted so that the compressed reconstruction uses fewer bits while remaining close to that reference. Bitrate minimization is coupled with PSNR-based quality control via an ADMM-inspired alternating procedure and a projection onto a fidelity ball around the reference SR image.
+
+The framework applies to convolutional and transformer SR models (e.g., NinaSR and Swin2SR, including a LoRA variant). The intended regime is offline or high-value adaptation rather than real-time restoration of every frame.
+\end{abstract}
+
+\noindent\textbf{Keywords:}
+super-resolution, learned image compression, rate--distortion, ADMM, per-image adaptation, BPP

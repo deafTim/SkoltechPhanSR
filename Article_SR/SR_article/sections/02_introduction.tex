@@ -1,0 +1,31 @@
+\section{Introduction}
+\label{sec:intro}
+
+Single-image super-resolution reconstructs a high-resolution image from a single low-resolution observation. Over the last decade the field has moved from interpolation kernels to convolutional networks and, more recently, transformer-based restorers that produce sharp edges and rich textures on standard benchmarks. As a result, SR is now a practical component in mobile imaging, remote sensing, scientific visualization, and content-delivery pipelines.
+
+In practice, however, the SR image is rarely the final product. After restoration it is usually \emph{compressed again} before storage or transmission. This creates a mismatch: the SR model maximises visual detail, while the overall system cares about how well the result survives compression. The fine textures that make modern SR look impressive are often the same features that raise image entropy and increase bits per pixel (bpp).
+
+A concrete illustration is a bicubic-downsampled DIV2K crop restored by a pretrained Swin2SR model and then encoded by several codecs. Lossless formats require many bpp; classical lossy codecs span a wide range; a strong neural codec (e.g., Cheng2020-style) is more efficient, but still spends a non-trivial number of bits on high-frequency content invented by the SR network.
+
+\paragraph{Research question.}
+Given a pretrained SR model and a fixed neural codec, can we adapt the SR output so that the compressed reconstruction becomes cheaper to encode while preserving the quality of the original SR result?
+
+\paragraph{Approach.}
+We study compression-aware \emph{per-image} fine-tuning. For each image:
+\begin{enumerate}
+    \item the pretrained SR output is the \emph{reference} to preserve;
+    \item the \emph{codec remains frozen};
+    \item only the SR parameters are updated with an ADMM-inspired scheme that penalises bitrate and controls fidelity via PSNR terms and a projection step.
+\end{enumerate}
+
+This differs from dataset-level joint training of SR and compression: the target is compressibility of an \emph{existing} SR backbone at deployment time, not a new generator architecture. Per-image adaptation fits offline or high-value settings (archival preparation, remote-sensing products, one-shot restoration that is stored many times), not real-time processing of every frame.
+
+\paragraph{Relevance.}
+The problem matters wherever SR is followed by storage or transmission under a bitrate budget: cloud photo processing, mobile imaging, remote sensing, telepresence, and any restoration pipeline in which the enhanced image is later encoded and transported.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+    \item A constrained formulation that minimises codec bitrate subject to PSNR constraints relative to the pretrained SR reference (not ground-truth HR as the optimisation target).
+    \item An ADMM-inspired per-image optimisation with an auxiliary image variable and projection onto a PSNR ball.
+    \item Instantiation on NinaSR and Swin2SR (full fine-tuning and LoRA), with evaluation under a shared operating-point rule that couples bitrate minimisation with an explicit PSNR guarantee.
+\end{enumerate}
