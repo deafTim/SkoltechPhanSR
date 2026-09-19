@@ -29,6 +29,9 @@ BACKBONE="nina"
 # Nina LoRA scope: all | attention_expand  (body.*.body.2.body.3 only)
 LORA_TARGET="all"
 
+# Adaptation: lora | full_rank  (full_rank = all SR weights trainable, tag *_full_rank)
+ADAPT="lora"
+
 # Optimizer: admm | direct  (direct = one Adam loss, no Z/T)
 METHOD="direct"
 # Direct only: gt | sr_orig  (PSNR hinges vs ground truth or pretrained SR)

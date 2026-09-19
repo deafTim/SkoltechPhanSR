@@ -164,6 +164,37 @@ def build_sr_pretrained(backbone: str, device):
     return model
 
 
+def build_sr_full_rank(backbone: str, device):
+    """Full fine-tuning: all SR weights trainable (no LoRA)."""
+    model = build_sr_pretrained(backbone, device)
+    for p in model.parameters():
+        p.requires_grad = True
+    model.train()
+    n_train = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    n_tot = sum(p.numel() for p in model.parameters())
+    print(f"SR full_rank[{backbone}]: trainable={n_train}, total={n_tot}")
+    return model
+
+
+def build_sr(
+    backbone: str,
+    device,
+    adapt: str = "lora",
+    lora_r: int = 4,
+    lora_alpha: float = 8.0,
+    lora_target: str = "all",
+):
+    """Build SR model for training. adapt: lora | full_rank."""
+    adapt = (adapt or "lora").lower()
+    if adapt == "full_rank":
+        return build_sr_full_rank(backbone, device)
+    if adapt in ("lora", ""):
+        return build_sr_lora(
+            backbone, device, lora_r=lora_r, lora_alpha=lora_alpha, lora_target=lora_target
+        )
+    raise ValueError(f"Unknown adapt={adapt!r} (use lora|full_rank)")
+
+
 def build_compression(device, model_name: str = "cheng2020-attn", quality: int = 6):
     """Frozen CompressAI model. Default eval() for metrics/select.
 
@@ -202,12 +233,25 @@ def run_tag(
     lora_r: int,
     method: str = "admm",
     lora_target: str = "all",
+    adapt: str = "lora",
 ) -> str:
+    """Directory / run tag.
+
+    LoRA:      imgSTEM_bb_psnrXX_lamY_rR_method[_attnexp]
+    full_rank: imgSTEM_bb_psnrXX_lamY_method_full_rank
+    """
     psnr_s = str(int(target_psnr)) if float(target_psnr).is_integer() else str(target_psnr)
-    base = f"img{img_stem}_{backbone}_psnr{psnr_s}_lam{lam:g}_r{lora_r}"
+    adapt = (adapt or "lora").lower()
     extras: list[str] = []
     if method:
         extras.append(method)
+
+    if adapt == "full_rank":
+        extras.append("full_rank")
+        base = f"img{img_stem}_{backbone}_psnr{psnr_s}_lam{lam:g}"
+        return f"{base}_{'_'.join(extras)}"
+
+    base = f"img{img_stem}_{backbone}_psnr{psnr_s}_lam{lam:g}_r{lora_r}"
     lt = (lora_target or "all").lower()
     if lt not in ("all", ""):
         extras.append(_LORA_TARGET_TAG.get(lt, lt.replace("_", "")))

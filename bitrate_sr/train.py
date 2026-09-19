@@ -22,7 +22,7 @@ from .admm_oldlike import minbitrate_superresolution_oldlike
 from .data import (
     DEFAULT_PROJECT_ROOT,
     build_compression,
-    build_sr_lora,
+    build_sr,
     load_lr_hr_pair,
     parse_img_list,
     run_tag,
@@ -63,6 +63,7 @@ def _load_direct_warmstart(
         raise ValueError("--admm-init direct requires --admm-init-runs-dir")
     init_root = Path(init_root)
     lora_target = (getattr(args, "lora_target", None) or "all").lower()
+    adapt = (getattr(args, "adapt", None) or "lora").lower()
     dtag = run_tag(
         Path(img_name).stem,
         args.target_psnr,
@@ -71,6 +72,7 @@ def _load_direct_warmstart(
         args.lora_r,
         method="direct",
         lora_target=lora_target,
+        adapt=adapt,
     )
     ddir = init_root / dtag
     if not ddir.is_dir():
@@ -86,7 +88,7 @@ def _load_direct_warmstart(
         if state is not None:
             model.load_state_dict(state, strict=False)
             loaded_weights = True
-            print(f"Warm-start LoRA from {ckpt_path}")
+            print(f"Warm-start weights ({adapt}) from {ckpt_path}")
             break
 
     z_init = None
@@ -109,7 +111,7 @@ def _load_direct_warmstart(
     if z_init is None:
         raise FileNotFoundError(f"no sr_final/SR.png in {ddir}")
     if not loaded_weights:
-        print(f"Warning: no LoRA ckpt in {ddir}; only Z warm-started (fresh LoRA)")
+        print(f"Warning: no ckpt in {ddir}; only Z warm-started (fresh {adapt} weights)")
     return z_init, loaded_weights
 
 
@@ -193,6 +195,7 @@ def run_one_oldlike(args, img_name: str, model_compression) -> dict:
         raise FileNotFoundError(img_path)
 
     lora_target = (getattr(args, "lora_target", None) or "all").lower()
+    adapt = (getattr(args, "adapt", None) or "lora").lower()
     tag_method = "admm_old"
     ladder = _parse_psnr_ladder(args)
     tags = [
@@ -204,6 +207,7 @@ def run_one_oldlike(args, img_name: str, model_compression) -> dict:
             args.lora_r,
             method=tag_method,
             lora_target=lora_target,
+            adapt=adapt,
         )
         for tp in ladder
     ]
@@ -213,8 +217,8 @@ def run_one_oldlike(args, img_name: str, model_compression) -> dict:
 
     print(
         f"=== {img_name} {tag_method} === ladder={ladder} lam={args.lam:g} "
-        f"repeats={args.repeats} outers={args.outers} inners={args.inners} lr={args.lr:g} "
-        f"device={device} runs_dir={runs_dir}"
+        f"adapt={adapt} repeats={args.repeats} outers={args.outers} inners={args.inners} "
+        f"lr={args.lr:g} device={device} runs_dir={runs_dir}"
     )
 
     x, gt, crop_meta = load_lr_hr_pair(
@@ -225,11 +229,12 @@ def run_one_oldlike(args, img_name: str, model_compression) -> dict:
         top=args.crop_top,
         device=device,
     )
-    model = build_sr_lora(
+    model = build_sr(
         args.backbone,
         device,
-        args.lora_r,
-        args.lora_alpha,
+        adapt=adapt,
+        lora_r=args.lora_r,
+        lora_alpha=args.lora_alpha,
         lora_target=lora_target,
     )
     # Ball center stays the pretrained SR for every rung, as in the notebook.
@@ -285,6 +290,7 @@ def run_one_oldlike(args, img_name: str, model_compression) -> dict:
                 "method": tag_method,
                 "admm_init": "ladder",
                 "lora_target": lora_target,
+                "adapt": adapt,
                 "lambda": args.lam,
                 "target_psnr": tp,
                 "anneal_psnrs": ladder,
@@ -324,6 +330,7 @@ def run_one(args, img_name: str, model_compression) -> dict:
 
     method = (args.method or "admm").lower()
     lora_target = (getattr(args, "lora_target", None) or "all").lower()
+    adapt = (getattr(args, "adapt", None) or "lora").lower()
     admm_init = (getattr(args, "admm_init", None) or "pretrained").lower()
     tag_method = _method_tag(args)
     tag = run_tag(
@@ -334,6 +341,7 @@ def run_one(args, img_name: str, model_compression) -> dict:
         args.lora_r,
         method=tag_method,
         lora_target=lora_target,
+        adapt=adapt,
     )
     out_dir = runs_dir / tag
     metrics_path = out_dir / "metrics.json"
@@ -343,7 +351,7 @@ def run_one(args, img_name: str, model_compression) -> dict:
 
     out_dir.mkdir(parents=True, exist_ok=True)
     print(
-        f"=== {tag} ===\nmethod={method} admm_init={admm_init} "
+        f"=== {tag} ===\nmethod={method} adapt={adapt} admm_init={admm_init} "
         f"lora_target={lora_target} device={device} out_dir={out_dir}"
     )
 
@@ -356,11 +364,12 @@ def run_one(args, img_name: str, model_compression) -> dict:
         device=device,
     )
 
-    model = build_sr_lora(
+    model = build_sr(
         args.backbone,
         device,
-        args.lora_r,
-        args.lora_alpha,
+        adapt=adapt,
+        lora_r=args.lora_r,
+        lora_alpha=args.lora_alpha,
         lora_target=lora_target,
     )
     with torch.no_grad():
@@ -369,7 +378,7 @@ def run_one(args, img_name: str, model_compression) -> dict:
     z_init = t_init = None
     if method == "admm" and admm_init == "direct":
         z_init, _ = _load_direct_warmstart(args, img_name, model, device)
-        # After loading LoRA from direct, refresh sr_orig for ball center:
+        # After loading weights from direct, refresh sr_orig for ball center:
         # keep pretrained ball (sr_orig before load). We already computed sr_orig
         # on fresh model — that is correct (ball around pretrained SR).
         # Recompute forward after weight load only for logging.
@@ -425,6 +434,7 @@ def run_one(args, img_name: str, model_compression) -> dict:
             "method": tag_method,
             "admm_init": admm_init if method == "admm" else None,
             "lora_target": lora_target,
+            "adapt": adapt,
             "lambda": args.lam,
             "target_psnr": args.target_psnr,
             "lora_r": args.lora_r,
@@ -458,11 +468,12 @@ def run_one(args, img_name: str, model_compression) -> dict:
         payload["T_tensor"] = T.detach().cpu()
         tensor_to_pil(Z).save(out_dir / "Z.png")
     torch.save(payload, out_dir / "Z.pt")
-    # Always keep LoRA weights for warm-start / resume (even if step checkpoints off)
+    # Always keep weights for warm-start / resume (even if step checkpoints off)
     torch.save(
         {
             "model_supres": model.state_dict(),
             "method": tag_method,
+            "adapt": adapt,
             "tag": tag,
         },
         out_dir / "latest.pt",
@@ -477,7 +488,7 @@ def run_one(args, img_name: str, model_compression) -> dict:
 
 
 def build_argparser():
-    p = argparse.ArgumentParser(description="Bitrate-SR LoRA (admm|direct; nina|swin)")
+    p = argparse.ArgumentParser(description="Bitrate-SR (admm|direct; nina|swin; lora|full_rank)")
     p.add_argument("--project-root", default=str(DEFAULT_PROJECT_ROOT))
     p.add_argument("--data-dir", default=None)
     p.add_argument("--runs-dir", default=None, help="Output root (default: PROJECT/runs/bitrate_sr)")
@@ -491,10 +502,16 @@ def build_argparser():
     p.add_argument("--lambda", dest="lam", type=float, required=True)
     p.add_argument("--method", default="admm", choices=["admm", "direct", "admm_oldlike"])
     p.add_argument(
+        "--adapt",
+        default="lora",
+        choices=["lora", "full_rank"],
+        help="lora = LoRA adapters only; full_rank = fine-tune all SR weights",
+    )
+    p.add_argument(
         "--admm-init",
         default="pretrained",
         choices=["pretrained", "direct"],
-        help="ADMM only: init Z (and LoRA if latest.pt exists) from a direct run",
+        help="ADMM only: init Z (and weights if latest.pt exists) from a direct run",
     )
     p.add_argument(
         "--admm-init-runs-dir",
@@ -528,7 +545,7 @@ def build_argparser():
         "--lora-target",
         default="all",
         choices=["all", "attention_expand"],
-        help="Nina: all Conv2d LoRA, or only body.*.body.2.body.3",
+        help="Nina LoRA only: all Conv2d LoRA, or only body.*.body.2.body.3",
     )
     p.add_argument("--lr", type=float, default=5e-4)
     p.add_argument("--inners", type=int, default=100)
@@ -557,6 +574,7 @@ def main(argv=None):
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     print(
         f"Loading compression on {device} ... method={args.method} "
+        f"adapt={getattr(args, 'adapt', 'lora')} "
         f"admm_init={getattr(args, 'admm_init', 'pretrained')}"
     )
     compression = build_compression(device, args.compression_model, args.compression_quality)
