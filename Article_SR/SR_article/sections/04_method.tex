@@ -1,62 +1,193 @@
 \section{Method}
 \label{sec:method}
 
-\subsection{ADMM-inspired variable splitting}
+\subsection{Overview}
 
-Bitrate lives in the latent space of the codec, while fidelity is measured in image space. Direct joint optimisation is difficult because both the SR network and the neural codec are highly nonlinear. To decouple the competing objectives, an ADMM-inspired variable-splitting strategy is introduced.
+Problem~\eqref{eq:compression_aware_problem} couples two objectives that live in
+different spaces: bitrate is measured in the latent domain of a frozen neural
+codec, while fidelity is measured in image space relative to the pretrained SR
+reference \(x_{\mathrm{ref}}\). Direct joint optimisation is difficult because
+both the SR network and the codec are highly nonlinear, and because the decision
+variables are network parameters \(\theta\) whereas the constraints are expressed
+on images.
 
-An auxiliary image variable \(z\) is constrained to the feasible set
+We therefore use an ADMM-inspired variable-splitting strategy~\cite{boyd2011admm}.
+The PSNR constraint on the SR image is enforced through an auxiliary image that
+is projected onto a feasible quality ball; the PSNR constraint on the compressed
+reconstruction is handled as a soft penalty; and the classical quadratic
+coupling term is replaced in practice by a PSNR-domain surrogate so that all
+loss terms operate on a comparable scale.
+
+\subsection{Constraint reformulation}
+
+Reducing bitrate tends to favour smoother, more compressible reconstructions,
+while the fidelity constraints require preserving the high-frequency content of
+\(x_{\mathrm{ref}}\). To separate these competing goals, introduce an auxiliary
+image \(z\) constrained to the feasible set
 \begin{equation}
   \mathcal{B}
-  = \bigl\{ z : \mathrm{PSNR}(z, x_{\mathrm{ref}}) \ge P_{\mathrm{target}} \bigr\},
+  = \bigl\{ z : \mathrm{PSNR}(z, x_{\mathrm{ref}}) \ge P_{\mathrm{target}} \bigr\}.
 \end{equation}
-which is a closed ball in image space centred at \(x_{\mathrm{ref}}\) with radius \(\delta\) determined by \(P_{\mathrm{target}}\):
+Geometrically, \(\mathcal{B}\) is a closed ball in image space centred at
+\(x_{\mathrm{ref}}\) with radius \(\delta\) determined by \(P_{\mathrm{target}}\):
 \begin{equation}
-  \delta^2 = \frac{C_{\mathrm{ch}} H W}{10^{P_{\mathrm{target}} / 10}}.
+  \delta^2
+  = \frac{C_{\mathrm{ch}} H W}{10^{P_{\mathrm{target}} / 10}},
+  \label{eq:psnr_radius}
 \end{equation}
+where \(C_{\mathrm{ch}}\), \(H\), and \(W\) are the channel and spatial dimensions
+of the SR image (pixel values in \([0,1]\)).
 
-The PSNR constraint on the compressed reconstruction is incorporated as a soft penalty. The reformulated problem separates bitrate-oriented updates on \(x = f_{\theta}(x_{\mathrm{LR}})\) from fidelity enforcement via projection of \(z\), coupled by \(x \approx z\).
+The compressed-image constraint is harder to enforce exactly because it depends
+on the nonlinear map \(\mathrm{Dec}\circ\mathrm{Enc}\). We fold it into the
+objective as a soft penalty. Define
+\begin{equation}
+  f(x) = R\!\bigl(\mathrm{Enc}(x)\bigr) + \lambda\,\phi(\hat{x}),
+  \qquad
+  \hat{x} = \mathrm{Dec}\!\bigl(\mathrm{Enc}(x)\bigr),
+\end{equation}
+with a dead-zone hinge around the target quality,
+\begin{equation}
+  \phi(\hat{x})
+  = \max\!\left(
+      \bigl|\mathrm{PSNR}(\hat{x}, x_{\mathrm{ref}}) - P_{\mathrm{target}}\bigr|
+      - 0.5,\; 0
+    \right).
+  \label{eq:soft_penalty}
+\end{equation}
+The \(0.5\,\mathrm{dB}\) margin avoids unnecessary gradient updates when the
+compressed reconstruction already meets the quality budget.
+
+The reformulated problem is then
+\begin{equation}
+  \min_{x,\,z} \; f(x) + I_{\mathcal{B}}(z)
+  \quad \text{subject to} \quad x = z,
+  \label{eq:split_problem}
+\end{equation}
+where \(I_{\mathcal{B}}\) is the indicator of \(\mathcal{B}\)
+(\(0\) on \(\mathcal{B}\), \(+\infty\) outside). Here \(x\) is responsible for
+bitrate reduction and \(z\) for fidelity; the equality \(x=z\) couples the two.
+
+\subsection{ADMM updates}
+
+With a scaled dual variable \(t\) and penalty parameter \(\gamma>0\), an
+augmented Lagrangian for~\eqref{eq:split_problem} is
+\begin{equation}
+  \mathcal{L}_{\gamma}(x, z, t)
+  = f(x) + I_{\mathcal{B}}(z)
+    + \frac{\gamma}{2}
+      \Bigl(\|x - z - t\|_2^2 - \|t\|_2^2\Bigr).
+\end{equation}
+Alternating minimisation yields the ADMM-style updates
+\begin{align}
+  x^{k+1}
+  &= \arg\min_{x} \;
+     f(x) + \tfrac{\gamma}{2}\|x - (z^{k} + t^{k})\|_2^2,
+     \label{eq:x_update} \\
+  z^{k+1}
+  &= \Pi_{\mathcal{B}}(x^{k+1} - t^{k}),
+     \label{eq:z_update} \\
+  t^{k+1}
+  &= t^{k} + z^{k+1} - x^{k+1}.
+     \label{eq:t_update}
+\end{align}
+In our setting the \(x\)-update is realised by gradient steps on the SR
+parameters \(\theta\) (with \(x = f_{\theta}(x_{\mathrm{LR}})\)), while the codec
+\(\mathrm{Enc},\mathrm{Dec}\) remains frozen. The \(z\)-update projects onto the
+PSNR ball, and the dual update accumulates the residual \(z-x\).
+
+\subsection{Projection onto the PSNR ball}
+
+The \(z\)-step is a Euclidean projection onto \(\mathcal{B}\). Let
+\begin{equation}
+  d^{k} = x^{k+1} - t^{k},
+  \qquad
+  e^{k} = d^{k} - x_{\mathrm{ref}}.
+\end{equation}
+If \(\|e^{k}\|_2 \le \delta\), set \(z^{k+1} = d^{k}\). Otherwise project onto
+the sphere boundary:
+\begin{equation}
+  z^{k+1}
+  = x_{\mathrm{ref}} + \delta\,\frac{e^{k}}{\|e^{k}\|_2 + \varepsilon},
+  \label{eq:projection_step}
+\end{equation}
+with a small \(\varepsilon>0\) for numerical stability. This closed form keeps
+\(z^{k+1}\in\mathcal{B}\) at every outer iteration.
 
 \subsection{Practical training loss}
 
-During the SR-parameter update, a practical penalty objective is
+A literal quadratic coupling \(\|x-(z+t)\|_2^2\) mixes poorly with bitrate
+\(R(y)\) measured in bits per pixel: the two quantities differ by orders of
+magnitude and make \(\gamma\) brittle. We therefore replace the quadratic term
+by a PSNR-based surrogate on the consensus target \(v^{k}=z^{k}+t^{k}\). The
+implemented inner-loop loss is
 \begin{equation}
-\mathcal{L}
-=
-10 \log_{10}(\mathrm{BPP} + \varepsilon)
-+ \lambda_1 \bigl| \mathrm{PSNR}_{\mathrm{comp}} - P_{\mathrm{target}} \bigr|
-+ \lambda_2 \bigl| \mathrm{PSNR}_{\mathrm{sr}} - P_{\mathrm{target}} \bigr|,
-\label{eq:training_loss}
+  \begin{aligned}
+    \mathcal{L}
+    &= 10\log_{10}\!\bigl(R(y)+\varepsilon\bigr) \\
+    &\quad
+      + \lambda_1\,\max\!\left(
+          \bigl|\mathrm{PSNR}(\hat{x}, x_{\mathrm{ref}}) - P_{\mathrm{target}}\bigr|
+          - 0.5,\; 0
+        \right) \\
+    &\quad
+      + \lambda_2\,\max\!\left(
+          \bigl|\mathrm{PSNR}(x, v^{k}) - P_{\mathrm{target}}\bigr|
+          - 0.5,\; 0
+        \right),
+  \end{aligned}
+  \label{eq:training_loss}
 \end{equation}
-where \(\mathrm{PSNR}_{\mathrm{comp}}\) compares the decompressed image to \(x_{\mathrm{ref}}\) and \(\mathrm{PSNR}_{\mathrm{sr}}\) ties the SR image to the current auxiliary target. The bitrate term drives cheaper compressed representations, while the PSNR terms discourage drift away from the desired high-fidelity region.
+where \(y=\mathrm{Enc}(x)\) and \(\hat{x}=\mathrm{Dec}(y)\). The first term
+drives bitrate down on a log scale; the second softly enforces compressed-image
+fidelity to \(x_{\mathrm{ref}}\); the third pulls the SR output toward the ADMM
+consensus point in PSNR units. The outer \(z\)- and \(t\)-updates remain as
+in~\eqref{eq:z_update}--\eqref{eq:t_update}.
+
+We call the scheme ADMM-\emph{inspired}: it borrows variable splitting and
+projection for controllability, without claiming formal convex ADMM convergence
+for the deep nonlinear composite map.
 
 \subsection{Per-image algorithm}
 
 \begin{enumerate}
-    \item Load an HR crop, construct \(x_{\mathrm{LR}}\) by bicubic downsampling, and compute \(x_{\mathrm{ref}} = f_{\theta_0}(x_{\mathrm{LR}})\).
-    \item Freeze the compression model. Choose trainable SR parameters: full NinaSR, full Swin2SR, or only LoRA adapters in Swin2SR.
-    \item Initialise the auxiliary image \(Z = x_{\mathrm{ref}}\) and the scaled dual variable \(T = 0\).
-    \item At each outer iteration, set the auxiliary target to \(Z + T\).
-    \item Inner loop: compute \(x_{\mathrm{SR}} = f_{\theta}(x_{\mathrm{LR}})\), compress it, estimate BPP and PSNR terms, and update \(\theta\) by minimising~\eqref{eq:training_loss}.
-    \item Project the SR image onto the feasible PSNR ball around \(x_{\mathrm{ref}}\). With \(D = x_{\mathrm{SR}} - T\) and \(E = D - x_{\mathrm{ref}}\), set \(Z = D\) if \(\|E\|_2 \le \delta\), otherwise \(Z = x_{\mathrm{ref}} + \delta E / (\|E\|_2 + \varepsilon)\).
-    \item Update the scaled dual variable: \(T \leftarrow T + Z - x_{\mathrm{SR}}\).
-    \item Select the operating point (e.g., lowest bpp subject to staying within about \(1\,\mathrm{dB}\) of the quality budget).
+    \item Construct \(x_{\mathrm{LR}}\) (bicubic downsampling of an HR crop) and
+    set \(x_{\mathrm{ref}}=f_{\theta_0}(x_{\mathrm{LR}})\). Freeze
+    \(\mathrm{Enc},\mathrm{Dec}\).
+    \item Choose trainable parameters: full NinaSR, full Swin2SR, or LoRA
+    adapters on Swin2SR. Initialise \(z^{0}=x_{\mathrm{ref}}\), \(t^{0}=0\).
+    \item For outer iteration \(k=0,\ldots,K-1\):
+    \begin{enumerate}
+        \item Set \(v^{k}=z^{k}+t^{k}\).
+        \item Inner loop (\(N_{\mathrm{in}}\) steps): compute
+        \(x=f_{\theta}(x_{\mathrm{LR}})\), \(y=\mathrm{Enc}(x)\),
+        \(\hat{x}=\mathrm{Dec}(y)\), and update \(\theta\) by minimising
+        \(\mathcal{L}\) in~\eqref{eq:training_loss}.
+        \item Project: \(z^{k+1}=\Pi_{\mathcal{B}}(x-t^{k})\)
+        via~\eqref{eq:projection_step}.
+        \item Dual update: \(t^{k+1}=t^{k}+z^{k+1}-x\).
+    \end{enumerate}
+    \item Select the operating point, e.g.\ the iterate with lowest bitrate
+    among those whose compressed PSNR stays within about \(1\,\mathrm{dB}\) of
+    the quality budget.
 \end{enumerate}
 
-The procedure is ADMM-\emph{inspired}: it is a structured alternating scheme that makes the bitrate--fidelity trade-off controllable, not a claim of formal convex ADMM convergence.
+\subsection{Backbones and implementation}
 
-\subsection{Backbones and implementation sketch}
-
-The framework supports:
+The same loop covers four branches:
 \begin{itemize}
     \item \textbf{NinaSR} at \(\times 2\) and \(\times 4\) (full fine-tuning);
     \item \textbf{Swin2SR} (full fine-tuning);
-    \item \textbf{Swin2SR+LoRA} (frozen backbone; adapters on attention modules, e.g.\ rank \(8\), \(\alpha=16\), targets \texttt{query}, \texttt{value}).
+    \item \textbf{Swin2SR+LoRA} (frozen backbone; adapters on attention modules,
+    e.g.\ rank \(8\), \(\alpha=16\), targets \texttt{query}, \texttt{value}).
 \end{itemize}
 
-In the reference experimental setting, the frozen codec is CompressAI \texttt{cheng2020-anchor} at quality level \(6\). Typical hyperparameter grids use
+In the reference setting the frozen codec is CompressAI
+\texttt{cheng2020-anchor} at quality level \(6\)~\cite{cheng2020learned,begaint2020compressai}.
+Typical grids use
 \[
 \lambda_1, \lambda_2 \in \{0.3, 0.5, 0.7, 1.0\}, \qquad
 \mathrm{lr} \in \{10^{-4}, 3\cdot 10^{-4}, 10^{-3}\},
 \]
-with on the order of \(20\) inner and \(20\) outer steps per run, and screened DIV2K crops spanning a broad bpp range.
+with about \(N_{\mathrm{in}}=20\) inner and \(K=20\) outer steps per run on
+screened DIV2K crops spanning a broad bpp range.

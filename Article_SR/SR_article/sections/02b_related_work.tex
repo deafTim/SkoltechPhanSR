@@ -1,0 +1,81 @@
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Single-image super-resolution}
+
+Classical SR relied on interpolation and handcrafted priors. Deep CNN models
+replaced these with learned mappings from low- to high-resolution
+images~\cite{dong2014srcnn,lim2017edsr,zhang2018rcan}. Perceptual and
+adversarial methods~\cite{ledig2017srgan,wang2021realesrgan} further increase
+texture realism, often at the cost of higher entropy. Transformer-based
+restorers such as SwinIR and Swin2SR~\cite{liang2021swinir,conde2022swin2sr}
+currently provide strong accuracy--efficiency trade-offs; compact CNNs such as
+NinaSR~\cite{gouvine2021torchsr} remain attractive when adaptation cost matters.
+A common side effect across these families is that synthesised high-frequency
+detail improves visual quality but can make the SR output harder to compress.
+
+\subsection{Learned image compression}
+
+Neural image compression (NIC) replaces hand-engineered transforms with
+end-to-end trained nonlinear analysis/synthesis networks and learned entropy
+models~\cite{balle2016end,balle2018variational,cheng2020learned}. Libraries
+such as CompressAI~\cite{begaint2020compressai} make pretrained codecs easy to
+reuse as differentiable bitrate interfaces. Most NIC work trains the codec
+itself for rate--distortion performance. In contrast, we \emph{freeze} a
+pretrained codec and use it only to measure and backpropagate bitrate while
+adapting the upstream SR model.
+
+\subsection{Compression-aware restoration and SR--compression pipelines}
+
+The interaction between restoration and compression has been studied from
+several angles. One line jointly trains restoration and compression networks
+under a combined rate--distortion objective, so that both components co-adapt.
+Another adds rate penalties to restoration losses while still optimising against
+ground-truth high-resolution images. Related observations on generative and
+perceptual SR note that richer textures raise bitrate under downstream
+codecs~\cite{ledig2017srgan,blau2018perception}, but do not by themselves
+provide a deployment-time adaptation procedure for an already pretrained
+backbone.
+
+These settings typically assume that both the restoration model and the codec
+can be (re)trained, and that the optimisation target is ground-truth HR. In
+many practical pipelines the codec is fixed by infrastructure constraints, and a
+high-performing SR model is already deployed. Retraining the full system may be
+undesirable or infeasible.
+
+\subsection{Per-image and parameter-efficient adaptation}
+
+Instance-specific optimisation and parameter-efficient fine-tuning
+(e.g., LoRA~\cite{hu2021lora}) reduce the cost of adapting large networks to a
+single input or a small parameter subset. We leverage this idea for
+compression-aware SR: full fine-tuning of compact CNNs, full or LoRA-based
+updates of Swin2SR, performed per image under a fixed codec.
+
+\subsection{Positioning}
+
+Table~\ref{tab:research_gap} summarises how the present setting differs from
+common alternatives. Our problem is characterised by three choices:
+(i)~a \emph{fixed} neural codec; (ii)~adaptation of a \emph{pretrained} SR
+backbone rather than training from scratch; and (iii)~\emph{per-image}
+optimisation whose fidelity reference is the baseline SR output, not the
+ground-truth HR image. Constrained alternating optimisation via an
+ADMM-inspired split~\cite{boyd2011admm} is used to keep bitrate minimisation
+and fidelity preservation coupled and inspectable.
+
+\begin{table}[t]
+\centering
+\caption{Comparison of optimisation settings in SR and image compression.}
+\label{tab:research_gap}
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Method} & \textbf{SR} & \textbf{Codec} & \textbf{GT} & \textbf{Img.-spec.} \\
+\midrule
+Standard SR              & Train  & Fixed  & Yes & No \\
+Learned compression      & Fixed  & Train  & Yes & No \\
+Joint SR+compression     & Train  & Train  & Yes & No \\
+Compression-aware SR     & Train  & Fixed  & Yes & No \\
+\textbf{Proposed}        & Adapt  & Fixed  & No  & Yes \\
+\bottomrule
+\end{tabular}
+\end{table}
