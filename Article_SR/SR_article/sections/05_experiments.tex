@@ -1,13 +1,36 @@
 \section{Experiments}
 \label{sec:experiments}
 
-\textit{Draft placeholder --- to be filled with tables, figures, and quantitative results.}
+\textit{Draft placeholder --- tables and remaining RD captions to be filled after full runs.}
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.95\linewidth]{fig01_pipeline}
+    \caption{SR + compression pipeline: LR input, SR reconstruction, frozen neural codec, and rate estimate $R(y)$.}
+    \label{fig:pipeline}
+\end{figure}
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.95\linewidth]{fig02_motivating}
+    \caption{Motivating compression comparison across codecs / settings (thesis figure).}
+    \label{fig:motivating}
+\end{figure}
+
+% RD figures (uncomment after running notebooks/make_article_figures.ipynb on Zhores):
+% \begin{figure}[!t]\centering\includegraphics[width=0.95\linewidth]{fig03_rd_main}\caption{Main rate--distortion curves (Nina/Swin, direct/ADMM, LoRA).}\label{fig:rd_main}\end{figure}
+% \begin{figure}[!t]\centering\includegraphics[width=0.95\linewidth]{fig04_lora_vs_full_rank}\caption{Nina: LoRA vs full\_rank (10 BPP-diverse images).}\label{fig:lora_vs_full}\end{figure}
+% \begin{figure}[!t]\centering\includegraphics[width=0.95\linewidth]{fig05_lora_vs_attnexp}\caption{Nina: LoRA-all vs attention\_expand (10 images).}\label{fig:attnexp}\end{figure}
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=0.95\linewidth]{fig06_visual}
+    \caption{Qualitative example after compression-aware fine-tuning (thesis demo crop).}
+    \label{fig:visual}
+\end{figure}
 
 \paragraph{Setup (planned).}
-Screened DIV2K crops; pretrained NinaSR (\(\times 2\), \(\times 4\)) and Swin2SR (full / LoRA); fixed Cheng2020-anchor codec; operating-point rule: lowest bpp within \(\approx 1\,\mathrm{dB}\) of the PSNR budget relative to the compressed baseline.
+Screened DIV2K crops; pretrained NinaSR and Swin2SR (LoRA / full\_rank / attnexp); fixed Cheng2020-anchor codec; operating-point rule: lowest bpp within $\approx 1\,\mathrm{dB}$ of the PSNR budget.
 
 \paragraph{Metrics (planned).}
-Mean / per-image bpp before and after adaptation; \(\Delta\)PSNR against the reference SR output and against ground-truth HR (reporting only); qualitative visual comparisons.
-
-\paragraph{Expected reference numbers (from the related thesis study).}
-Depending on the backbone, mean bpp reductions on the order of \(31\%\)--\(48\%\) at less than \(1\,\mathrm{dB}\) average PSNR loss have been reported under the same selection rule. These figures must be re-verified and attributed correctly before inclusion in the final article.
+Mean / per-image bpp; $\Delta$PSNR vs reference SR and vs GT HR; qualitative panels.
