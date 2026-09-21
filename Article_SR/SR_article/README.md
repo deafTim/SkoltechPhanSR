@@ -33,7 +33,7 @@ pdflatex main.tex
 ## Figures
 
 - `fig01`, `fig02`, `fig06` — put manually into `figures/`
-- `fig03`–`fig05` — from your runs via the notebook (needs `runs/` on Zhores):
+- `fig03`–`fig04` — from `*_10` runs via the notebook; `fig05` after attnexp finishes:
 
 ```bash
 cd Article_SR/SR_article/notebooks
